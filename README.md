@@ -9,6 +9,8 @@ Built for the dumbest local models you'd actually run, 1-4B. It talks to
 (`http://127.0.0.1:1338/v1`) by default and works with Ollama, LM Studio,
 llama.cpp server, etc.
 
+![localsearch answering "what do the galapagos finches eat?" with a cited TLDR](image.png)
+
 The design assumption is the same as janedit's: **the model is unreliable and
 the harness has to be the thing that's correct.** Code does all the searching,
 cutting and stitching. The model only answers small closed questions, and
