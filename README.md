@@ -98,9 +98,35 @@ reachable at startup, this is what you get automatically.
 
 ## Files it reads
 
-`.txt` `.md` `.rst` `.org` `.html` `.epub` need only the standard library.
-`.pdf` needs `pypdf` (installed by the setup line above). Hidden files and
-folders are skipped.
+| kind                 | extensions                                                    |
+| -------------------- | ------------------------------------------------------------- |
+| Office               | `.docx` `.xlsx` `.pptx`                                       |
+| LibreOffice          | `.odt` `.ods` `.odp`                                          |
+| books and documents  | `.epub` `.pdf` `.rtf` `.html` `.htm` `.xhtml`                 |
+| text and markup      | `.txt` `.md` `.rst` `.org` `.tex` `.log` `.xml`               |
+| data                 | `.csv` `.tsv` `.json` `.jsonl` `.yaml` `.yml` `.toml` `.ini`  |
+| email and subtitles  | `.eml` `.srt` `.vtt`                                          |
+| code                 | `.py` `.js` `.ts` `.java` `.c` `.cpp` `.go` `.rs` `.rb` `.sh` `.sql`, and more |
+
+Everything except `.pdf` needs only the standard library: the Office and
+LibreOffice formats are zip files full of XML underneath. `.pdf` needs
+`pypdf` (installed by the setup line above). Scanned PDFs (pictures of
+pages) have no text to find.
+
+How structured files are turned into searchable paragraphs:
+
+- **Spreadsheets** (`.xlsx` `.ods` `.csv`): rows become sentences using the
+  header row: `[Sales] Month: Feb; Revenue: 950.5; Region: South.`, so a small
+  model doesn't have to line up a bare `Feb | 950.5 | South` with column names
+  it saw 40 rows earlier.
+- **Slides** (`.pptx` `.odp`): one paragraph per slide, speaker notes included:
+  `Slide 3: Title. Bullet. Notes: ...`
+- **Subtitles** (`.srt` `.vtt`): grouped into paragraphs that start with a
+  timestamp, so a citation tells you where in the video to look.
+- **Word tables** become `Header: value` sentences, like spreadsheets.
+
+Not supported: old binary `.doc`/`.xls`/`.ppt`, and `.mobi`/Kindle formats.
+Hidden files and folders are skipped.
 
 The index lives in `~/.localsearch/indexes/`, one SQLite file per folder,
 so nothing is written into your books folder. Only new or changed files

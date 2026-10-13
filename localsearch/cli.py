@@ -92,7 +92,7 @@ def open_index(console: Console, folder: Path) -> Index:
     for rel, err in stats.failed:
         console.print(f"[yellow]skipped {escape(rel)}: {escape(err)}[/yellow]")
     if files == 0:
-        console.print("[yellow]no searchable files here (txt, md, html, epub, pdf)[/yellow]")
+        console.print("[yellow]no searchable files here (see README for supported types)[/yellow]")
     return index
 
 

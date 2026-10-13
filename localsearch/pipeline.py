@@ -155,7 +155,12 @@ def looks_like_heading(para: str) -> bool:
 
 def looks_like_junk(para: str) -> bool:
     """Tables of contents, back-of-book indexes, ascii tables: lots of search
-    words, no actual sentences. Mostly CAPITALS, or mostly numbers."""
+    words, no actual sentences. Mostly CAPITALS, or mostly numbers.
+
+    Spreadsheet rows ("Month: Jan; Revenue: 1200.") are numbers-heavy on
+    purpose; their "Header: value" pairs mark them as data, not junk."""
+    if len(re.findall(r"\w: \S", para)) >= 2:
+        return False
     letters = [c for c in para if c.isalpha()]
     if letters and sum(c.isupper() for c in letters) / len(letters) > 0.5:
         return True
