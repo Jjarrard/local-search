@@ -4,41 +4,52 @@ Point it at a folder of books (or notes, or docs), ask "find out about xyz",
 and get back a short TLDR built only from what's actually in the files,
 with every claim pointing at the paragraph it came from.
 
-Built for the dumbest local models you'd actually run, 1-4B. It talks to
-[Jan](https://jan.ai)'s local OpenAI-compatible API
-(`http://127.0.0.1:1338/v1`) by default and works with Ollama, LM Studio,
-llama.cpp server, etc.
+Built for the dumbest local models you'd actually run, 1-4B. It works with
+any local OpenAI-compatible server - Ollama, [Jan](https://jan.ai), LM
+Studio, llama.cpp - and finds whichever one is running by itself.
 
 ![localsearch answering "what do the galapagos finches eat?" with a cited TLDR](image.png)
 
-The design assumption is the same as janedit's: **the model is unreliable and
+The design assumption is the same as [local-edit](https://github.com/Jjarrard/local-edit)'s: **the model is unreliable and
 the harness has to be the thing that's correct.** Code does all the searching,
 cutting and stitching. The model only answers small closed questions, and
 code checks every answer.
 
+## Install
+
+Needs Python 3.10+ and a local model server. If you don't have one,
+[Ollama](https://ollama.com/download) is the quickest: install it and
+`localsearch setup` will offer to download a small model for you.
+
+```bash
+pipx install git+https://github.com/Jjarrard/local-search
+localsearch setup
+```
+
+(No pipx? `pip install git+https://github.com/Jjarrard/local-search` works too.)
+
+`setup` finds running model servers, helps you pick a model (it suggests
+the best 1-4B one you have), asks which folder to search, and checks the
+model answers. Everything is remembered in `~/.localsearch/config.json`.
+
 ## Run it
 
 ```bash
-./localsearch-run --folder ~/Books
+localsearch                     # ask questions about your folder
+localsearch --folder ~/Books    # switch folder (remembered)
+localsearch "what did darwin think about the galapagos tortoises"   # ask once and exit
 ```
 
-Or ask one question and exit:
+If the server you used last time isn't running, localsearch looks for
+another one on the usual ports (Ollama, Jan, LM Studio, llama.cpp) and
+switches to it. With no server at all it still searches and shows the best
+matching sentences, just without a TLDR.
+
+Working on the code instead:
 
 ```bash
-./localsearch-run --folder ~/Books "what did darwin think about the galapagos tortoises"
-```
-
-The folder is remembered, so after the first run `./localsearch-run` alone
-is enough. Make it a bare command (run this from inside the repo folder):
-
-```bash
-echo "alias localsearch=\"$(pwd)/localsearch-run\"" >> ~/.zshrc
-```
-
-Setting up from scratch:
-
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e . pypdf
+python3 -m venv .venv && .venv/bin/pip install -e .
+./localsearch-run
 ```
 
 ## What it does with a question
@@ -110,7 +121,7 @@ reachable at startup, this is what you get automatically.
 
 Everything except `.pdf` needs only the standard library: the Office and
 LibreOffice formats are zip files full of XML underneath. `.pdf` needs
-`pypdf` (installed by the setup line above). Scanned PDFs (pictures of
+`pypdf`, which is installed with localsearch. Scanned PDFs (pictures of
 pages) have no text to find.
 
 How structured files are turned into searchable paragraphs:
@@ -153,7 +164,7 @@ changes mid-session.
 `--folder` `--base-url` `--model` `--top` `--max-grow` `--context-size`
 `--no-llm` `--think` `--verbose`
 
-Not using Jan? See [docs/custom-api.md](docs/custom-api.md).
+Server on a different port or machine, or one that needs an API key? See [docs/custom-api.md](docs/custom-api.md).
 
 ## Tests
 

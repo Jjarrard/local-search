@@ -1,15 +1,13 @@
 [project]
 name = "localsearch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Search inside a folder of files and get a TLDR, using tiny (1-4B) local models via any OpenAI-compatible API."
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.31",
     "rich>=13.0",
+    "pypdf>=4.0",
 ]
-
-[project.optional-dependencies]
-pdf = ["pypdf>=4.0"]
 
 [project.scripts]
 localsearch = "localsearch.cli:main"

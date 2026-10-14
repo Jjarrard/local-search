@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,8 +11,8 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from . import completion, ui
-from .client import APIConnectionError, ChatClient, is_chat_model
+from . import completion, servers, ui
+from .client import APIConnectionError, ChatClient
 from .config import Config
 from .index import Index
 from .pipeline import TLDR_REPLY_TOKENS, Gathered, Searcher, tldr_prompt
@@ -35,7 +36,11 @@ slash commands:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="localsearch", description=__doc__)
+    p = argparse.ArgumentParser(
+        prog="localsearch",
+        description=__doc__,
+        epilog="first time? run `localsearch setup` to find a model server and pick a folder.",
+    )
     p.add_argument("question", nargs="*", help="ask once and exit instead of starting the REPL")
     p.add_argument("--folder", default=None, help="folder to search (remembered between runs; default: current dir)")
     p.add_argument("--base-url", default=None, help="OpenAI-compatible API base URL (Jan, Ollama, ...)")
@@ -242,9 +247,120 @@ def handle_slash(app: App, text: str) -> bool:
     return False
 
 
+def connect(console: Console, cfg: Config, client: ChatClient, explicit_url: bool) -> list[str]:
+    """Chat models on the configured server. If it isn't answering and the URL
+    wasn't given on the command line, look for another local server and switch
+    to it - starting Ollama instead of Jan shouldn't mean editing a config."""
+    models = servers.probe(cfg.base_url, cfg.api_key, timeout=5)
+    if models or explicit_url:
+        if models is None:
+            console.print(f"[yellow]could not reach the model server at {escape(cfg.base_url)}[/yellow]")
+        return models or []
+    found = [s for s in servers.find_servers(api_key=cfg.api_key) if s.models]
+    if not found:
+        if models is None:
+            console.print(f"[yellow]no model server found (tried {escape(cfg.base_url)} and the usual ports)[/yellow]")
+        else:
+            console.print(f"[yellow]the server at {escape(cfg.base_url)} has no chat model loaded[/yellow]")
+        return []
+    server = found[0]
+    console.print(f"[dim]found {server.name} at {escape(server.base_url)}[/dim]")
+    cfg.base_url = client.base_url = server.base_url
+    return server.models
+
+
+def setup(console: Console, cfg: Config) -> int:
+    """Interactive first-run: find (or download) a model, pick a folder, test it."""
+    console.print("[bold]localsearch setup[/bold]\n")
+
+    with ui.status(console, "looking for model servers"):
+        found = servers.find_servers(extra=(cfg.base_url,), api_key=cfg.api_key)
+    for s in found:
+        n = len(s.models)
+        console.print(f"  [green]✓[/green] {s.name:<10} {escape(s.base_url)}  [dim]{n} model{'s' if n != 1 else ''}[/dim]")
+    if not found:
+        console.print("  [yellow]no model server is running.[/yellow]")
+
+    with_models = [s for s in found if s.models]
+    ollama = next((s for s in found if s.name == "Ollama"), None)
+
+    if not with_models and ollama:
+        model = servers.RECOMMENDED_OLLAMA_MODEL
+        console.print(f"\nOllama is running but has no models. {model} (~2.5 GB) works well with localsearch.")
+        if ui.confirm(console, f"download {model} now?", ui.YES_NO_STOP[:2]) == "yes":
+            if not servers.ollama_pull(model):
+                console.print("[red]download failed[/red] - try `ollama pull` yourself, then rerun setup.")
+                return 1
+            ollama.models = servers.probe(ollama.base_url, cfg.api_key) or []
+            with_models = [ollama] if ollama.models else []
+
+    if not with_models:
+        console.print()
+        if servers.ollama_installed() and not ollama:
+            console.print("Ollama is installed but not running. Open the Ollama app (or run `ollama serve`),")
+            console.print("then run `localsearch setup` again.")
+        else:
+            console.print("localsearch needs a local model server. The easiest options:")
+            console.print("  [bold]Ollama[/bold]     https://ollama.com/download   (then run `localsearch setup` again)")
+            console.print("  [bold]Jan[/bold]        https://jan.ai                (start its local API server)")
+            console.print("  [bold]LM Studio[/bold]  https://lmstudio.ai           (start its local server)")
+        console.print("\n[dim]meanwhile `localsearch --no-llm` searches without a model.[/dim]")
+        return 1
+
+    console.print()
+    if len(with_models) > 1:
+        labels = [f"{s.name}  {s.base_url}" for s in with_models]
+        chosen = ui.select(console, "Which server?", labels)
+        if not chosen:
+            return 1
+        server = with_models[labels.index(chosen)]
+    else:
+        server = with_models[0]
+
+    suggested = servers.pick_default_model(server.models)
+    current = cfg.model if cfg.model in server.models else suggested
+    options = cfg.order_models(server.models)
+    console.print(f"[dim]small (1-4B) models answer fastest here; suggested: {escape(suggested or '')}[/dim]")
+    model = ui.select(console, "Which model?", options, current=current)
+    if not model:
+        return 1
+
+    default_folder = cfg.folder or str(Path.cwd())
+    while True:
+        raw = ui.ask_line(f"folder to search [{default_folder}]: ", color="1").strip()
+        folder = Path(raw or default_folder).expanduser().resolve()
+        if folder.is_dir():
+            break
+        console.print(f"[red]not a folder: {escape(str(folder))}[/red]")
+
+    client = ChatClient(base_url=server.base_url, model=model, api_key=cfg.api_key, no_think=cfg.no_think)
+    try:
+        with ui.status(console, f"testing {model}"):
+            reply = client.ask("Reply with the single word OK.", max_tokens=16)
+        console.print(f"[green]✓[/green] {escape(model)} answered: {escape(reply[:40] or '(empty)')}")
+    except APIConnectionError as exc:
+        console.print(f"[yellow]the model didn't answer: {escape(str(exc))}[/yellow]")
+        console.print("[dim]saving anyway - check the model is loaded on the server.[/dim]")
+
+    cfg.base_url = server.base_url
+    cfg.model = model
+    cfg.remember_model(model)
+    cfg.folder = str(folder)
+    cfg.save()
+    console.print(f"\n[bold]ready.[/bold] run `localsearch` and ask a question about {escape(str(folder))}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else argv
     console = Console()
+    if argv[:1] == ["setup"]:
+        try:
+            return setup(console, Config.load())
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]setup cancelled.[/dim]")
+            return 1
+    args = build_arg_parser().parse_args(argv)
     cfg = Config.load()
 
     folder = Path(args.folder or cfg.folder or ".").expanduser().resolve()
@@ -264,16 +380,16 @@ def main(argv: list[str] | None = None) -> int:
     available: list[str] = []
     use_llm = not args.no_llm
     if use_llm:
-        try:
-            available = [m for m in client.list_models() if is_chat_model(m)]
-        except APIConnectionError as exc:
-            console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+        available = connect(console, cfg, client, explicit_url=bool(args.base_url))
         if not available:
-            console.print("[yellow]no model available - running search + extracts only (like --no-llm).[/yellow]")
+            console.print(
+                "[yellow]no model available - running search + extracts only (like --no-llm).[/yellow]\n"
+                "[dim]run `localsearch setup` to find or download a model.[/dim]"
+            )
             use_llm = False
 
     if available:
-        model = args.model or (cfg.model if cfg.model in available else None) or available[0]
+        model = args.model or (cfg.model if cfg.model in available else None) or servers.pick_default_model(available)
         if args.model and args.model not in available:
             console.print(f"[yellow]warning: '{escape(args.model)}' isn't loaded on the server[/yellow]")
         client.model = model

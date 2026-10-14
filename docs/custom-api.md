@@ -1,12 +1,14 @@
 # Using a different API
 
-localsearch talks to any OpenAI-compatible chat completions endpoint, not just
-Jan. Point it elsewhere with `--base-url`:
+localsearch talks to any OpenAI-compatible chat completions endpoint. Servers
+on their default local ports (Jan, Ollama, LM Studio, llama.cpp) are found
+automatically by `localsearch setup` and at startup. For anything else -
+another port, another machine - point it there with `--base-url`:
 
 ```bash
-./localsearch-run --base-url http://localhost:11434/v1   # Ollama
-./localsearch-run --base-url http://localhost:1234/v1    # LM Studio
-./localsearch-run --base-url http://localhost:8080/v1    # llama.cpp server
+localsearch --base-url http://localhost:11434/v1   # Ollama
+localsearch --base-url http://localhost:1234/v1    # LM Studio
+localsearch --base-url http://localhost:8080/v1    # llama.cpp server
 ```
 
 The URL is remembered in `~/.localsearch/config.json`, so you only pass it
